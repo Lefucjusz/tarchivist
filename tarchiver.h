@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <time.h>
+#include <stdbool.h>
 
 #define TARCHIVER_TAR_BLOCK_SIZE 512
 
@@ -32,11 +33,12 @@ enum {
     TARCHIVER_CLOSEFAIL  = -6,
     TARCHIVER_BADCHKSUM  = -7,
     TARCHIVER_NULLRECORD = -8,
-    TARCHIVER_NOTFOUND   = -9
+    TARCHIVER_NOTFOUND   = -9,
+    TARCHIVER_NOMEMORY   = -10
 };
 
 enum {
-     TARCHIVER_NORMAL   = '0',
+     TARCHIVER_FILE     = '0',
      TARCHIVER_HARDLINK = '1',
      TARCHIVER_SYMLINK  = '2',
      TARCHIVER_CHARDEV  = '3',
@@ -49,18 +51,17 @@ typedef struct tarchiver_t {
     FILE *stream;
     char mode;
     long last_header_pos;
-    size_t bytes_to_read;
+    size_t bytes_left;
+    bool first_write;
 } tarchiver_t;
 
 int tarchiver_open(tarchiver_t *tar, const char *filename, const char *mode);
-
-int tarchiver_read_header(tarchiver_t *tar, tarchiver_header_t *header);
 int tarchiver_next(tarchiver_t *tar);
 int tarchiver_find(tarchiver_t *tar, const char *filename, tarchiver_header_t *header);
+int tarchiver_read_header(tarchiver_t *tar, tarchiver_header_t *header);
 ssize_t tarchiver_read_data(tarchiver_t *tar, size_t size, void *data);
-
-//int tarchiver_write_data(tarchiver_t *tar, size_t size, const void *data)
-
+int tarchiver_write_header(tarchiver_t *tar, const tarchiver_header_t *header);
+ssize_t tarchiver_write_data(tarchiver_t *tar, size_t size, const void *data);
 int tarchiver_close(tarchiver_t *tar);
 
 #endif

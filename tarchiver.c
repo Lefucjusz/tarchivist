@@ -1,10 +1,11 @@
 #include "tarchiver.h"
 
+#include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include <stddef.h>
 
-//TODO restricts
+#define TARCHIVER_CLOSING_RECORD_SIZE (2 * TARCHIVER_TAR_BLOCK_SIZE)
 
 /* USTAR format */
 typedef struct __attribute__((packed)) tarchiver_raw_header_t {
@@ -77,8 +78,60 @@ static int tarchiver_write(tarchiver_t *tar, size_t size, const void *data) {
 
 static int tarchiver_rewind(tarchiver_t *tar) {
     tar->last_header_pos = 0;
-    tar->bytes_to_read = 0;
+    tar->bytes_left = 0;
     return tarchiver_seek(tar, 0, SEEK_SET);
+}
+
+static int tarchiver_skip_closing_record(tarchiver_t *tar) {
+    int err;
+
+    /* Perform only during the first write and in append mode */
+    if (tar->mode != 'a') {
+        tar->first_write = false;
+        return TARCHIVER_SUCCESS;
+    }
+    if (tar->first_write == false) {
+        return TARCHIVER_SUCCESS;
+    }
+
+    char *buffer = (char *) calloc(1, TARCHIVER_CLOSING_RECORD_SIZE);
+    char *zeros = (char *) calloc(1, TARCHIVER_CLOSING_RECORD_SIZE);
+    if (buffer == NULL || zeros == NULL) {
+        return TARCHIVER_NOMEMORY;
+    }
+
+    do
+    {
+        /* Seek to the beginning of the closing record */
+        err = tarchiver_seek(tar, -TARCHIVER_CLOSING_RECORD_SIZE, SEEK_END);
+        if (err != TARCHIVER_SUCCESS) {
+            break;
+        }
+
+        /* Read the content of the closing record */
+        err = tarchiver_read(tar, TARCHIVER_CLOSING_RECORD_SIZE, buffer);
+        if (err != TARCHIVER_SUCCESS) {
+            break;
+        }
+
+        /* Check whether it is closing record indeed */
+        if (memcmp(buffer, zeros, TARCHIVER_CLOSING_RECORD_SIZE) == 0) {
+            /* Seek to the beginning of the closing record so that the next write will overwrite it */
+            err = tarchiver_seek(tar, -TARCHIVER_CLOSING_RECORD_SIZE, SEEK_END);
+            if (err != TARCHIVER_SUCCESS) {
+                break;
+            }
+            tar->first_write = false;
+            break;
+        }
+//        printf("[DEBUG] memory differs\n");
+//        err = TARCHIVER_FAILURE;
+
+    } while (0);
+
+    free(zeros);
+    free(buffer);
+    return err;
 }
 
 static int tarchiver_raw_to_header(tarchiver_header_t *header, const tarchiver_raw_header_t *raw_header) {
@@ -86,9 +139,9 @@ static int tarchiver_raw_to_header(tarchiver_header_t *header, const tarchiver_r
         return TARCHIVER_FAILURE;
     }
 
-    /* Checksum starting with a null byte is a null record */
+    /* Assume that checksum starting with a null byte indicates a null record */
     if (raw_header->checksum[0] == '\0') {
-        return TARCHIVER_NULLRECORD; // TODO why?
+        return TARCHIVER_NULLRECORD;
     }
 
     if (tarchiver_validate_checksum(raw_header) != TARCHIVER_SUCCESS) {
@@ -125,7 +178,7 @@ static int tarchiver_header_to_raw(tarchiver_raw_header_t *raw_header, const tar
     snprintf(raw_header->gid, sizeof(raw_header->gid), "%o", header->gid);
     snprintf(raw_header->size, sizeof(raw_header->size), "%lo", header->size);
     snprintf(raw_header->mtime, sizeof(raw_header->mtime), "%lo", header->mtime);
-    raw_header->typeflag = (header->typeflag == '\0') ? TARCHIVER_NORMAL : header->typeflag; // TODO is it needed?
+    raw_header->typeflag = header->typeflag;
     strncpy(raw_header->linkname, header->linkname, sizeof(raw_header->linkname));
     strncpy(raw_header->magic, "ustar", sizeof(raw_header->magic));
     strncpy(raw_header->version, "00", sizeof(raw_header->version));
@@ -148,8 +201,9 @@ int tarchiver_open(tarchiver_t *tar, const char *filename, const char *mode) {
         return TARCHIVER_FAILURE;
     }
 
-    /* Clear tar struct */
+    /* Prepare tar struct */
     memset(tar, 0, sizeof(tarchiver_t));
+    tar->first_write = true;
 
     /* Ensure that file is accessed in binary mode */
     tar->mode = mode[0];
@@ -173,12 +227,13 @@ int tarchiver_open(tarchiver_t *tar, const char *filename, const char *mode) {
     /* If that has failed and requested mode is 'append', maybe the file doesn't exist
      * Try to open it in normal write mode */
     if (tar->stream == NULL && tar->mode == 'a') {
-       tar->stream = fopen(filename, "wb");
+        tar->mode = 'w';
+        tar->stream = fopen(filename, "wb");
     }
 
     /* If that has failed too, give up */
     if (tar->stream == NULL) {
-       return TARCHIVER_OPENFAIL;
+        return TARCHIVER_OPENFAIL;
     }
 
     /* If in read mode - check if the opened file is a valid tar archive */
@@ -192,27 +247,6 @@ int tarchiver_open(tarchiver_t *tar, const char *filename, const char *mode) {
     }
 
     return TARCHIVER_SUCCESS;
-}
-
-int tarchiver_read_header(tarchiver_t *tar, tarchiver_header_t *header) {
-    tarchiver_raw_header_t raw_header;
-    /* Save last header position */
-    tar->last_header_pos = ftell(tar->stream);
-
-    /* Read the header */
-    int read_status = tarchiver_read(tar, sizeof(tarchiver_raw_header_t), &raw_header);
-
-    /* Go back to the beginning of the header */
-    int seek_status = tarchiver_seek(tar, tar->last_header_pos, SEEK_SET);
-
-    /* Report status */
-    if (read_status != TARCHIVER_SUCCESS) {
-        return read_status;
-    }
-    if (seek_status != TARCHIVER_SUCCESS) {
-        return seek_status;
-    }
-    return tarchiver_raw_to_header(header, &raw_header);
 }
 
 int tarchiver_next(tarchiver_t *tar) {
@@ -239,7 +273,7 @@ int tarchiver_find(tarchiver_t *tar, const char *filename, tarchiver_header_t *h
 
     /* Iterate until there's nothing left to read */
     while ((err = tarchiver_read_header(tar, &temp_header)) == TARCHIVER_SUCCESS) {
-        if(strcmp(filename, temp_header.name) == 0) {
+        if (strcmp(filename, temp_header.name) == 0) {
             if (header != NULL) {
                 *header = temp_header;
                 break;
@@ -254,18 +288,40 @@ int tarchiver_find(tarchiver_t *tar, const char *filename, tarchiver_header_t *h
     return err;
 }
 
+int tarchiver_read_header(tarchiver_t *tar, tarchiver_header_t *header) {
+    tarchiver_raw_header_t raw_header;
+
+    /* Save last header position */
+    tar->last_header_pos = ftell(tar->stream);
+
+    /* Read the header */
+    int read_status = tarchiver_read(tar, sizeof(tarchiver_raw_header_t), &raw_header);
+
+    /* Go back to the beginning of the header */
+    int seek_status = tarchiver_seek(tar, tar->last_header_pos, SEEK_SET);
+
+    /* Report status */
+    if (read_status != TARCHIVER_SUCCESS) {
+        return read_status;
+    }
+    if (seek_status != TARCHIVER_SUCCESS) {
+        return seek_status;
+    }
+    return tarchiver_raw_to_header(header, &raw_header);
+}
+
 ssize_t tarchiver_read_data(tarchiver_t *tar, size_t size, void *data) {
     int err;
 
     /* If no bytes left to read then this is the first read, obtain the
      * size from the header and go to the beginning of the data */
-    if (tar->bytes_to_read == 0) {
+    if (tar->bytes_left == 0) {
         tarchiver_header_t header;
         err = tarchiver_read_header(tar, &header);
         if (err != TARCHIVER_SUCCESS) {
             return err;
         }
-        tar->bytes_to_read = header.size;
+        tar->bytes_left = header.size;
 
         err = tarchiver_seek(tar, ftell(tar->stream) + sizeof(tarchiver_raw_header_t), SEEK_SET);
         if (err != TARCHIVER_SUCCESS) {
@@ -274,17 +330,20 @@ ssize_t tarchiver_read_data(tarchiver_t *tar, size_t size, void *data) {
     }
 
     /* If requested to read more than left to read */
-    if (tar->bytes_to_read < size) {
-        size = tar->bytes_to_read;
+    if (tar->bytes_left < size) {
+        size = tar->bytes_left;
     }
 
+    /* Read data */
     err = tarchiver_read(tar, size, data);
     if (err != TARCHIVER_SUCCESS) {
         return err;
     }
-    tar->bytes_to_read -= size;
 
-    if (tar->bytes_to_read == 0) {
+    tar->bytes_left -= size;
+
+    /* If no data left, rewind back to the beginning of the record */
+    if (tar->bytes_left == 0) {
         err = tarchiver_seek(tar, tar->last_header_pos, SEEK_SET);
         if (err != TARCHIVER_SUCCESS) {
             return err;
@@ -295,14 +354,79 @@ ssize_t tarchiver_read_data(tarchiver_t *tar, size_t size, void *data) {
     return size;
 }
 
-//int tarchiver_write_data(tarchiver_t *tar, size_t size, const void *data) {
-//
-//}
+int tarchiver_write_header(tarchiver_t *tar, const tarchiver_header_t *header) {
+    /* Skip closing record */
+    int err = tarchiver_skip_closing_record(tar);
+    if (err != TARCHIVER_SUCCESS) {
+        return err;
+    }
+
+    /* Prepare raw header */
+    tarchiver_raw_header_t raw_header;
+    tarchiver_header_to_raw(&raw_header, header);
+    tar->bytes_left = header->size; // Store size to know how many bytes of data has to be written
+    return tarchiver_write(tar, sizeof(tarchiver_raw_header_t), &raw_header);
+}
+
+ssize_t tarchiver_write_data(tarchiver_t *tar, size_t size, const void *data) {
+    /* Skip closing record */
+    int err = tarchiver_skip_closing_record(tar);
+    if (err != TARCHIVER_SUCCESS) {
+        return err;
+    }
+
+    /* If requested to write more than left to write */
+    if (tar->bytes_left < size) {
+        size = tar->bytes_left;
+    }
+
+    /* Write data */
+    err = tarchiver_write(tar, size, data);
+    if (err != TARCHIVER_SUCCESS) {
+        return err;
+    }
+    tar->bytes_left -= size;
+
+    /* Pad with zeros to multiple of a block size */
+    long pos = ftell(tar->stream);
+    size_t pad_size = tarchiver_round_up(pos, TARCHIVER_TAR_BLOCK_SIZE) - pos;
+
+    char *zeros = (char *) calloc(1, pad_size);
+    if (zeros == NULL) {
+        return TARCHIVER_NOMEMORY;
+    }
+
+    err = tarchiver_write(tar, pad_size, zeros);
+    if (err != TARCHIVER_SUCCESS) {
+        free(zeros);
+        return err;
+    }
+
+    free(zeros);
+    return size;
+}
 
 int tarchiver_close(tarchiver_t *tar) {
     if (tar == NULL || tar->stream == NULL) {
         return TARCHIVER_FAILURE;
     }
+
+    /* If not in read mode and new data have been written, finalize the archive */
+    if (tar->mode != 'r' && tar->first_write == false) {
+        char *zeros = (char *) calloc(1, TARCHIVER_CLOSING_RECORD_SIZE);
+        if (zeros == NULL) {
+            return TARCHIVER_NOMEMORY;
+        }
+
+        int err = tarchiver_write(tar, TARCHIVER_CLOSING_RECORD_SIZE, zeros);
+        if (err != TARCHIVER_SUCCESS) {
+            free(zeros);
+            return err;
+        }
+
+        free(zeros);
+    }
+
     if (fclose(tar->stream) != 0) {
         return TARCHIVER_CLOSEFAIL;
     }
