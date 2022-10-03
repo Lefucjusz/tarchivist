@@ -9,6 +9,7 @@
 #include <errno.h>
 
 #define FTW_MAX_DIRS_OPENED 10
+#define STREAM_BUFFER_SIZE (1024 * 1024) // 1MiB
 
 typedef struct tar_ctx_t {
     char *buffer;
@@ -19,17 +20,28 @@ typedef struct tar_ctx_t {
 tar_ctx_t ctx;
 
 static void tar_path_cleanup(char *path) {
-    /* Remove './' */
+    if (path == NULL || strlen(path) < 2) {
+        return;
+    }
+
+    /* Remove duplicated slashes */
+    for (size_t i = 0; i < strlen(path) - 1; i++) {
+        if (path[i] == '/' && path[i + 1] == '/') {
+            memmove(path + i, path + i + 1, strlen(path + i + 1) + 1);
+        }
+    }
+
+    /* Remove CWD */
     if (strncmp(path, "./", 2) == 0) {
-        memmove(path, path + 2, strlen(path) - 1);
+        memmove(path, path + 2, strlen(path + 2) + 1);
     }
 
-    /* Remove leading '/' */
+    /* Remove leading slash */
     if (path[0] == '/') {
-        memmove(path, path + 1, strlen(path));
+        memmove(path, path + 1, strlen(path + 1) + 1);
     }
 
-    /* Remove trailing '/' */
+    /* Remove trailing slash */
     size_t end = strlen(path) - 1;
     if (path[end] == '/') {
         path[end] = '\0';
@@ -45,9 +57,9 @@ static int tar_pack_file(const struct stat *statbuf, const char *path) {
     }
 
     const size_t path_length = strlen(path) + 1;
-    char *path_cleaned = (char *) malloc(path_length);
+    char *path_cleaned = (char *) calloc(1, path_length);
     if (path_cleaned == NULL) {
-        printf("Failed to allocate path buffer of size %luB\n", path_length);
+        printf("Failed to allocate %luB for path buffer\n", path_length);
         return TAR_NOMEMORY;
     }
     strncpy(path_cleaned, path, path_length);
@@ -57,12 +69,16 @@ static int tar_pack_file(const struct stat *statbuf, const char *path) {
     time(&timestamp);
 
     strncpy(header.name, path_cleaned, sizeof(header.name));
-    header.size = statbuf->st_size;
     header.mode = 0664;
+    header.uid = 1000;
+    header.gid = 1000;
+    header.size = statbuf->st_size;
     header.mtime = timestamp;
     header.typeflag = TARCHIVER_FILE;
+    strncpy(header.uname, "Lefucjusz", sizeof(header.uname));
+    strncpy(header.gname, "Lefucjusz", sizeof(header.gname));
 
-    printf("Appending file %s to %s (%lu.%lukB)\n", path, path_cleaned, header.size / 1024, header.size % 1024);
+    printf("Appending file %s to %s (%lu.%03luKiB)\n", path, path_cleaned, header.size / 1024, header.size % 1024);
     free(path_cleaned);
 
     int err = tarchiver_write_header(&ctx.tar, &header);
@@ -90,9 +106,9 @@ static int tar_pack_directory(const char *path) {
     tarchiver_header_t header = {0};
 
     const size_t path_length = strlen(path) + 1;
-    char *path_cleaned = (char *) malloc(path_length);
+    char *path_cleaned = (char *) calloc(1, path_length);
     if (path_cleaned == NULL) {
-        printf("Failed to allocate path buffer of size %luB\n", path_length);
+        printf("Failed to allocate %luB for path buffer\n", path_length);
         return TAR_NOMEMORY;
     }
     strncpy(path_cleaned, path, path_length);
@@ -103,8 +119,12 @@ static int tar_pack_directory(const char *path) {
 
     strncpy(header.name, path_cleaned, sizeof(header.name));
     header.mode = 0755;
+    header.uid = 1000;
+    header.gid = 1000;
     header.mtime = timestamp;
     header.typeflag = TARCHIVER_DIR;
+    strncpy(header.uname, "Lefucjusz", sizeof(header.uname));
+    strncpy(header.gname, "Lefucjusz", sizeof(header.gname));
 
     printf("Appending directory %s to %s\n", path, path_cleaned);
     free(path_cleaned);
@@ -116,28 +136,23 @@ static int tar_pack_directory(const char *path) {
 }
 
 static int tar_ftw_callback(const char *path, const struct stat *statbuf, int typeflag) {
-    int err;
     switch (typeflag) {
         case FTW_F:
-            err = tar_pack_file(statbuf, path);
-            break;
+            return tar_pack_file(statbuf, path);
         case FTW_D:
-            err = tar_pack_directory(path);
-            break;
+            return tar_pack_directory(path);
         default:
-            printf("Unhandled case in FTW callback: %d", typeflag);
-            err = TAR_FAILURE;
-            break;
+            printf("Unhandled case in ftw() callback: %d\n", typeflag);
+            return TAR_FAILURE;
     }
-    return err;
 }
 
 static int tar_unpack_file(tarchiver_header_t *header, const char *dir) {
     const char *name = header->name;
     const size_t path_length = strlen(name) + strlen(dir) + 2; // Two additional for '/' and null-terminator
-    char *full_path = (char *) malloc(path_length);
+    char *full_path = (char *) calloc(1, path_length);
     if (full_path == NULL) {
-        printf("Failed to allocate buffer of %luB\n", path_length);
+        printf("Failed to allocate %luB for path buffer\n", path_length);
         return TAR_NOMEMORY;
     }
 
@@ -150,7 +165,7 @@ static int tar_unpack_file(tarchiver_header_t *header, const char *dir) {
         return TAR_OPENFAIL;
     }
 
-    printf("Unpacking file %s (%lu.%lukB)\n", full_path, header->size / 1024, header->size % 1024);
+    printf("Unpacking file %s (%lu.%03luKiB)\n", full_path, header->size / 1024, header->size % 1024);
     free(full_path);
 
     size_t read_size;
@@ -172,9 +187,9 @@ static int tar_unpack_file(tarchiver_header_t *header, const char *dir) {
 static int tar_unpack_directory(tarchiver_header_t *header, const char *dir) {
     const char *name = header->name;
     const size_t path_length = strlen(name) + strlen(dir) + 2; // Two additional for '/' and null-terminator
-    char *full_path = (char *) malloc(path_length);
+    char *full_path = (char *) calloc(1, path_length);
     if (full_path == NULL) {
-        printf("Failed to allocate buffer of %luB\n", path_length);
+        printf("Failed to allocate %luB for path buffer\n", path_length);
         return TAR_NOMEMORY;
     }
 
@@ -203,10 +218,10 @@ static int tar_init(const char *tarname, const char *mode) {
         return TAR_LIBERROR;
     }
 
-    ctx.buffer_size = 1024 * 1024; // 1MiB
-    ctx.buffer = (char *) malloc(ctx.buffer_size);
+    ctx.buffer_size = STREAM_BUFFER_SIZE;
+    ctx.buffer = (char *) calloc(1, ctx.buffer_size);
     if (ctx.buffer == NULL) {
-        printf("Failed to allocate memory for tar buffer\n");
+        printf("Failed to allocate %luB for stream buffer\n", ctx.buffer_size);
         return TAR_NOMEMORY;
     }
 
@@ -253,7 +268,7 @@ int tar_unpack(const char *dir, const char *tarname) {
                 err = tar_unpack_directory(&header, dir);
                 break;
             default:
-                printf("Unhandled case in unpack: %d", header.typeflag);
+                printf("Unhandled case in unpack: %d\n", header.typeflag);
                 err = TAR_FAILURE;
                 break;
         }

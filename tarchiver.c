@@ -1,9 +1,9 @@
 #include "tarchiver.h"
 
 #include <stdlib.h>
-#include <string.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
 
 #define TARCHIVER_CLOSING_RECORD_SIZE (2 * TARCHIVER_TAR_BLOCK_SIZE)
 
@@ -35,7 +35,7 @@ static unsigned tarchiver_compute_checksum(const tarchiver_raw_header_t *header)
     unsigned checksum = 0;
 
     /* Checksum is computed as if checksum field was all spaces */
-    for (size_t i = 0; i < sizeof(tarchiver_raw_header_t); i++) {
+    for (size_t i = 0; i < sizeof(tarchiver_raw_header_t); ++i) {
         if (i >= checksum_start && i < checksum_end) {
             checksum += (unsigned)(' ');
         }
@@ -124,8 +124,7 @@ static int tarchiver_skip_closing_record(tarchiver_t *tar) {
             tar->first_write = false;
             break;
         }
-//        printf("[DEBUG] memory differs\n");
-//        err = TARCHIVER_FAILURE;
+        /* If it's not a closing record, do nothing */
 
     } while (0);
 
@@ -149,19 +148,19 @@ static int tarchiver_raw_to_header(tarchiver_header_t *header, const tarchiver_r
     }
 
     /* Parse and load raw header to header */
-    strncpy(header->name, raw_header->name, sizeof(header->name));
+    memcpy(header->name, raw_header->name, sizeof(header->name));
     sscanf(raw_header->mode, "%o", &header->mode);
     sscanf(raw_header->uid, "%o", &header->uid);
     sscanf(raw_header->gid, "%o", &header->gid);
     sscanf(raw_header->size, "%lo", &header->size);
     sscanf(raw_header->mtime, "%lo", &header->mtime);
     header->typeflag = raw_header->typeflag;
-    strncpy(header->linkname, raw_header->linkname, sizeof(header->linkname));
-    strncpy(header->uname, raw_header->uname, sizeof(header->uname));
-    strncpy(header->gname, raw_header->gname, sizeof(header->gname));
+    memcpy(header->linkname, raw_header->linkname, sizeof(header->linkname));
+    memcpy(header->uname, raw_header->uname, sizeof(header->uname));
+    memcpy(header->gname, raw_header->gname, sizeof(header->gname));
     sscanf(raw_header->devmajor, "%o", &header->devmajor);
     sscanf(raw_header->devminor, "%o", &header->devminor);
-    strncpy(header->prefix, raw_header->prefix, sizeof(header->prefix));
+    memcpy(header->prefix, raw_header->prefix, sizeof(header->prefix));
 
     return TARCHIVER_SUCCESS;
 }
@@ -172,21 +171,21 @@ static int tarchiver_header_to_raw(tarchiver_raw_header_t *raw_header, const tar
     memset(raw_header, 0, sizeof(tarchiver_raw_header_t));
 
     /* Parse and load header to raw header */
-    strncpy(raw_header->name, header->name, sizeof(raw_header->name));
+    memcpy(raw_header->name, header->name, sizeof(raw_header->name));
     snprintf(raw_header->mode, sizeof(raw_header->mode), "%o", header->mode);
     snprintf(raw_header->uid, sizeof(raw_header->uid), "%o", header->uid);
     snprintf(raw_header->gid, sizeof(raw_header->gid), "%o", header->gid);
     snprintf(raw_header->size, sizeof(raw_header->size), "%lo", header->size);
     snprintf(raw_header->mtime, sizeof(raw_header->mtime), "%lo", header->mtime);
     raw_header->typeflag = header->typeflag;
-    strncpy(raw_header->linkname, header->linkname, sizeof(raw_header->linkname));
-    strncpy(raw_header->magic, "ustar", sizeof(raw_header->magic));
-    strncpy(raw_header->version, "00", sizeof(raw_header->version));
-    strncpy(raw_header->uname, header->uname, sizeof(raw_header->uname));
-    strncpy(raw_header->gname, header->gname, sizeof(raw_header->gname));
+    memcpy(raw_header->linkname, header->linkname, sizeof(raw_header->linkname));
+    memcpy(raw_header->magic, "ustar", sizeof(raw_header->magic));
+    memcpy(raw_header->version, "00", sizeof(raw_header->version));
+    memcpy(raw_header->uname, header->uname, sizeof(raw_header->uname));
+    memcpy(raw_header->gname, header->gname, sizeof(raw_header->gname));
     snprintf(raw_header->devmajor, sizeof(raw_header->devmajor), "%o", header->devmajor);
     snprintf(raw_header->devminor, sizeof(raw_header->devminor), "%o", header->devminor);
-    strncpy(raw_header->prefix, header->prefix, sizeof(raw_header->prefix));
+    memcpy(raw_header->prefix, header->prefix, sizeof(raw_header->prefix));
 
     /* Compute checksum */
     unsigned checksum = tarchiver_compute_checksum(raw_header);

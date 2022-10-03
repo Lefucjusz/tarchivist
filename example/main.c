@@ -11,10 +11,10 @@ enum {
 int main(int argc, char **argv) {
     int opt, err;
     int mode = UNKNOWN;
-    const char *input_path = NULL;
-    const char *output_path = NULL;
+    const char *src_path = NULL;
+    const char *dst_path = NULL;
 
-    while ((opt = getopt(argc, argv, "pui:o:")) != -1) {
+    while ((opt = getopt(argc, argv, "pus:d:")) != -1) {
         switch (opt) {
             case 'p':
                 mode = PACK;
@@ -22,21 +22,21 @@ int main(int argc, char **argv) {
             case 'u':
                 mode = UNPACK;
                 break;
-            case 'i':
-                input_path = optarg;
+            case 's':
+                src_path = optarg;
                 break;
-            case 'o':
-                output_path = optarg;
+            case 'd':
+                dst_path = optarg;
                 break;
         }
     }
 
     switch (mode) {
         case PACK:
-            err = tar_pack(output_path, input_path);
+            err = tar_pack(dst_path, src_path);
             break;
         case UNPACK:
-            err = tar_unpack(output_path, input_path);
+            err = tar_unpack(dst_path, src_path);
             break;
         default:
             printf("No mode option switch provided\n");
