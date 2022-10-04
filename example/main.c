@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <unistd.h>
+#include <getopt.h>
 #include "tar.h"
 
 enum {
@@ -9,7 +9,7 @@ enum {
 };
 
 int main(int argc, char **argv) {
-    int opt, err;
+    int opt, err = TAR_SUCCESS;
     int mode = UNKNOWN;
     const char *src_path = NULL;
     const char *dst_path = NULL;

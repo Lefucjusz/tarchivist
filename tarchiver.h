@@ -59,9 +59,9 @@ int tarchiver_open(tarchiver_t *tar, const char *filename, const char *mode);
 int tarchiver_next(tarchiver_t *tar);
 int tarchiver_find(tarchiver_t *tar, const char *filename, tarchiver_header_t *header);
 int tarchiver_read_header(tarchiver_t *tar, tarchiver_header_t *header);
-ssize_t tarchiver_read_data(tarchiver_t *tar, size_t size, void *data);
+long tarchiver_read_data(tarchiver_t *tar, size_t size, void *data);
 int tarchiver_write_header(tarchiver_t *tar, const tarchiver_header_t *header);
-ssize_t tarchiver_write_data(tarchiver_t *tar, size_t size, const void *data);
+long tarchiver_write_data(tarchiver_t *tar, size_t size, const void *data);
 int tarchiver_close(tarchiver_t *tar);
 
 #endif

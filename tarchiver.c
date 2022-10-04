@@ -10,34 +10,35 @@
 #define TARCHIVER_VERSION "00"
 
 /* USTAR format */
-typedef struct __attribute__((packed)) tarchiver_raw_header_t {
-    char name[100];     // Filename, null-terminated if space
-    char mode[8];       // Permissions as octal string
-    char uid[8];        // User ID as octal string
-    char gid[8];        // Group ID as octal string
-    char size[12];      // File size in bytes as octal string
-    char mtime[12];     // Modification time (seconds from Jan 1, 1970) as octal string
-    char checksum[8];   // Sum of bytes in header (with checksum considered as all spaces)
-    char typeflag;      // Record type
-    char linkname[100]; // Name of the link target, null-terminated if space
-    char magic[6];      // "ustar\0"
-    char version[2];    // "00" (no null-terminator!)
-    char uname[32];     // User name, always null-terminated
-    char gname[32];     // Group name, always null-terminated
-    char devmajor[8];   // Device major number as octal string
-    char devminor[8];   // Device minor number as octal string
-    char prefix[155];   // Prefix to file name, null-terminated if space
-    char padding[12];   // Padding to 512 bytes
+typedef struct tarchiver_raw_header_t {
+    char name[100];     /* Filename, null-terminated if space */
+    char mode[8];       /* Permissions as octal string */
+    char uid[8];        /* User ID as octal string */
+    char gid[8];        /* Group ID as octal string */
+    char size[12];      /* File size in bytes as octal string */
+    char mtime[12];     /* Modification time (seconds from Jan 1, 1970) as octal string */
+    char checksum[8];   /* Sum of bytes in header (with checksum considered as all spaces) */
+    char typeflag;      /* Record type */
+    char linkname[100]; /* Name of the link target, null-terminated if space */
+    char magic[6];      /* "ustar\0" */
+    char version[2];    /* "00" (no null-terminator!) */
+    char uname[32];     /* User name, always null-terminated */
+    char gname[32];     /* Group name, always null-terminated */
+    char devmajor[8];   /* Device major number as octal string */
+    char devminor[8];   /* Device minor number as octal string */
+    char prefix[155];   /* Prefix to file name, null-terminated if space */
+    char padding[12];   /* Padding to 512 bytes */
 } tarchiver_raw_header_t;
 
 static unsigned tarchiver_compute_checksum(const tarchiver_raw_header_t *header) {
     const uint8_t *header_byte_ptr = (const uint8_t *) header;
     const size_t checksum_start = offsetof(tarchiver_raw_header_t, checksum);
     const size_t checksum_end = checksum_start + sizeof(header->checksum);
-    unsigned checksum = 0;
 
     /* Checksum is computed as if checksum field was all spaces */
-    for (size_t i = 0; i < sizeof(tarchiver_raw_header_t); ++i) {
+    size_t i;
+    unsigned checksum = 0;
+    for (i = 0; i < sizeof(tarchiver_raw_header_t); ++i) {
         if (i >= checksum_start && i < checksum_end) {
             checksum += (unsigned)(' ');
         }
@@ -150,7 +151,7 @@ static int tarchiver_raw_to_header(tarchiver_header_t *header, const tarchiver_r
     sscanf(raw_header->mode, "%o", &header->mode);
     sscanf(raw_header->uid, "%o", &header->uid);
     sscanf(raw_header->gid, "%o", &header->gid);
-    sscanf(raw_header->size, "%lo", &header->size);
+    sscanf(raw_header->size, "%zo", &header->size);
     sscanf(raw_header->mtime, "%lo", &header->mtime);
     header->typeflag = raw_header->typeflag;
     memcpy(header->linkname, raw_header->linkname, sizeof(header->linkname));
@@ -170,24 +171,24 @@ static int tarchiver_header_to_raw(tarchiver_raw_header_t *raw_header, const tar
 
     /* Parse and load header to raw header */
     memcpy(raw_header->name, header->name, sizeof(raw_header->name));
-    snprintf(raw_header->mode, sizeof(raw_header->mode), "%o", header->mode);
-    snprintf(raw_header->uid, sizeof(raw_header->uid), "%o", header->uid);
-    snprintf(raw_header->gid, sizeof(raw_header->gid), "%o", header->gid);
-    snprintf(raw_header->size, sizeof(raw_header->size), "%lo", header->size);
-    snprintf(raw_header->mtime, sizeof(raw_header->mtime), "%lo", header->mtime);
+    sprintf(raw_header->mode, "%o", header->mode);
+    sprintf(raw_header->uid, "%o", header->uid);
+    sprintf(raw_header->gid, "%o", header->gid);
+    sprintf(raw_header->size, "%zo", header->size);
+    sprintf(raw_header->mtime, "%lo", header->mtime);
     raw_header->typeflag = header->typeflag;
     memcpy(raw_header->linkname, header->linkname, sizeof(raw_header->linkname));
     memcpy(raw_header->magic, TARCHIVER_MAGIC, sizeof(raw_header->magic));
     memcpy(raw_header->version, TARCHIVER_VERSION, sizeof(raw_header->version));
     memcpy(raw_header->uname, header->uname, sizeof(raw_header->uname));
     memcpy(raw_header->gname, header->gname, sizeof(raw_header->gname));
-    snprintf(raw_header->devmajor, sizeof(raw_header->devmajor), "%o", header->devmajor);
-    snprintf(raw_header->devminor, sizeof(raw_header->devminor), "%o", header->devminor);
+    sprintf(raw_header->devmajor, "%o", header->devmajor);
+    sprintf(raw_header->devminor, "%o", header->devminor);
     memcpy(raw_header->prefix, header->prefix, sizeof(raw_header->prefix));
 
     /* Compute checksum */
     unsigned checksum = tarchiver_compute_checksum(raw_header);
-    snprintf(raw_header->checksum, sizeof(raw_header->checksum), "%06o", checksum);
+    sprintf(raw_header->checksum, "%06o", checksum);
     raw_header->checksum[7] = ' ';
 
     return TARCHIVER_SUCCESS;
@@ -209,7 +210,7 @@ int tarchiver_open(tarchiver_t *tar, const char *filename, const char *mode) {
             mode = "rb";
             break;
         case 'a':
-            mode = "rb+"; // Little hack to be able to append to arbitrary places in file
+            mode = "rb+"; /* Little hack to be able to append to arbitrary places in file */
             break;
         case 'w':
             mode = "wb";
@@ -289,7 +290,7 @@ int tarchiver_find(tarchiver_t *tar, const char *path, tarchiver_header_t *heade
         }
 
         /* Compute lengths */
-        name++; // Skip slash
+        name++; /* Skip slash */
         name_length = strlen(name);
         prefix_length = path_length - name_length - 1;
 
@@ -346,7 +347,7 @@ int tarchiver_read_header(tarchiver_t *tar, tarchiver_header_t *header) {
     return tarchiver_raw_to_header(header, &raw_header);
 }
 
-ssize_t tarchiver_read_data(tarchiver_t *tar, size_t size, void *data) {
+long tarchiver_read_data(tarchiver_t *tar, size_t size, void *data) {
     if (tar == NULL || data == NULL) {
         return TARCHIVER_FAILURE;
     }
@@ -408,11 +409,11 @@ int tarchiver_write_header(tarchiver_t *tar, const tarchiver_header_t *header) {
     /* Prepare raw header */
     tarchiver_raw_header_t raw_header;
     tarchiver_header_to_raw(&raw_header, header);
-    tar->bytes_left = header->size; // Store size to know how many bytes of data has to be written
+    tar->bytes_left = header->size; /* Store size to know how many bytes of data has to be written */
     return tarchiver_write(tar, sizeof(tarchiver_raw_header_t), &raw_header);
 }
 
-ssize_t tarchiver_write_data(tarchiver_t *tar, size_t size, const void *data) {
+long tarchiver_write_data(tarchiver_t *tar, size_t size, const void *data) {
     if (tar == NULL || data == NULL) {
         return TARCHIVER_FAILURE;
     }

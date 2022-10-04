@@ -95,26 +95,26 @@ static int tar_pack_file(const struct stat *statbuf, const char *path) {
     const size_t path_length = strlen(path) + 1;
     char *path_cleaned = (char *) calloc(1, path_length);
     if (path_cleaned == NULL) {
-        printf("Failed to allocate %luB for path buffer\n", path_length);
+        printf("Failed to allocate %zuB for path buffer\n", path_length);
         return TAR_NOMEMORY;
     }
-    strncpy(path_cleaned, path, path_length);
+    snprintf(path_cleaned, path_length, "%s", path);
     tar_path_cleanup(path_cleaned);
 
     time_t timestamp;
     time(&timestamp);
 
-    strncpy(header.name, path_cleaned, sizeof(header.name));
+    snprintf(header.name, sizeof(header.name), "%s", path_cleaned);
     header.mode = 0664;
     header.uid = 1000;
     header.gid = 1000;
     header.size = statbuf->st_size;
     header.mtime = timestamp;
     header.typeflag = TARCHIVER_FILE;
-    strncpy(header.uname, "Lefucjusz", sizeof(header.uname));
-    strncpy(header.gname, "Lefucjusz", sizeof(header.gname));
+    snprintf(header.uname, sizeof(header.uname), "Lefucjusz");
+    snprintf(header.gname, sizeof(header.gname), "Lefucjusz");
 
-    printf("Appending file %s to %s (%lu.%03luKiB)\n", path, path_cleaned, header.size / 1024, header.size % 1024);
+    printf("Appending file %s to %s (%zu.%03zuKiB)\n", path, path_cleaned, header.size / 1024, header.size % 1024);
     free(path_cleaned);
 
     int err = tarchiver_write_header(&ctx.tar, &header);
@@ -144,23 +144,23 @@ static int tar_pack_directory(const char *path) {
     const size_t path_length = strlen(path) + 1;
     char *path_cleaned = (char *) calloc(1, path_length);
     if (path_cleaned == NULL) {
-        printf("Failed to allocate %luB for path buffer\n", path_length);
+        printf("Failed to allocate %zuB for path buffer\n", path_length);
         return TAR_NOMEMORY;
     }
-    strncpy(path_cleaned, path, path_length);
+    snprintf(path_cleaned, path_length, "%s", path);
     tar_path_cleanup(path_cleaned);
 
     time_t timestamp;
     time(&timestamp);
 
-    strncpy(header.name, path_cleaned, sizeof(header.name));
+    snprintf(header.name, sizeof(header.name), "%s", path_cleaned);
     header.mode = 0755;
     header.uid = 1000;
     header.gid = 1000;
     header.mtime = timestamp;
     header.typeflag = TARCHIVER_DIR;
-    strncpy(header.uname, "Lefucjusz", sizeof(header.uname));
-    strncpy(header.gname, "Lefucjusz", sizeof(header.gname));
+    snprintf(header.uname, sizeof(header.uname), "Lefucjusz");
+    snprintf(header.gname, sizeof(header.gname), "Lefucjusz");
 
     printf("Appending directory %s to %s\n", path, path_cleaned);
     free(path_cleaned);
@@ -188,7 +188,7 @@ static int tar_unpack_file(tarchiver_header_t *header, const char *dir) {
     const size_t path_length = strlen(name) + strlen(dir) + 2; // Two additional for '/' and null-terminator
     char *full_path = (char *) calloc(1, path_length);
     if (full_path == NULL) {
-        printf("Failed to allocate %luB for path buffer\n", path_length);
+        printf("Failed to allocate %zuB for path buffer\n", path_length);
         return TAR_NOMEMORY;
     }
 
@@ -201,7 +201,7 @@ static int tar_unpack_file(tarchiver_header_t *header, const char *dir) {
         return TAR_OPENFAIL;
     }
 
-    printf("Unpacking file %s (%lu.%03luKiB)\n", full_path, header->size / 1024, header->size % 1024);
+    printf("Unpacking file %s (%zu.%03zuKiB)\n", full_path, header->size / 1024, header->size % 1024);
     free(full_path);
 
     size_t read_size;
@@ -225,7 +225,7 @@ static int tar_unpack_directory(tarchiver_header_t *header, const char *dir) {
     const size_t path_length = strlen(name) + strlen(dir) + 2; // Two additional for '/' and null-terminator
     char *full_path = (char *) calloc(1, path_length);
     if (full_path == NULL) {
-        printf("Failed to allocate %luB for path buffer\n", path_length);
+        printf("Failed to allocate %zuB for path buffer\n", path_length);
         return TAR_NOMEMORY;
     }
 
@@ -258,7 +258,7 @@ static int tar_init(const char *tarname, const char *mode) {
     ctx.buffer_size = STREAM_BUFFER_SIZE;
     ctx.buffer = (char *) calloc(1, ctx.buffer_size);
     if (ctx.buffer == NULL) {
-        printf("Failed to allocate %luB for stream buffer\n", ctx.buffer_size);
+        printf("Failed to allocate %zuB for stream buffer\n", ctx.buffer_size);
         return TAR_NOMEMORY;
     }
 
@@ -295,11 +295,13 @@ int tar_unpack(const char *dir, const char *tarname) {
         return err;
     }
 
-    char *dir_cleaned = (char *) calloc(1, strlen(dir) + 1);
+    const char dir_length = strlen(dir) + 1;
+    char *dir_cleaned = (char *) calloc(1, dir_length);
     if (dir_cleaned == NULL) {
+	printf("Failed to allocate %zuB for path buffer\n", dir_length);
         return TAR_NOMEMORY;
     }
-    strcpy(dir_cleaned, dir);
+    snprintf(dir_cleaned, dir_length, "%s", dir);
 
     /* Directory path cleanup */
     tar_remove_duplicated_slashes(dir_cleaned);
