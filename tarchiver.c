@@ -6,6 +6,8 @@
 #include <string.h>
 
 #define TARCHIVER_CLOSING_RECORD_SIZE (2 * TARCHIVER_TAR_BLOCK_SIZE)
+#define TARCHIVER_MAGIC "ustar"
+#define TARCHIVER_VERSION "00"
 
 /* USTAR format */
 typedef struct __attribute__((packed)) tarchiver_raw_header_t {
@@ -134,10 +136,6 @@ static int tarchiver_skip_closing_record(tarchiver_t *tar) {
 }
 
 static int tarchiver_raw_to_header(tarchiver_header_t *header, const tarchiver_raw_header_t *raw_header) {
-    if (header == NULL || raw_header == NULL) {
-        return TARCHIVER_FAILURE;
-    }
-
     /* Assume that checksum starting with a null byte indicates a null record */
     if (raw_header->checksum[0] == '\0') {
         return TARCHIVER_NULLRECORD;
@@ -179,8 +177,8 @@ static int tarchiver_header_to_raw(tarchiver_raw_header_t *raw_header, const tar
     snprintf(raw_header->mtime, sizeof(raw_header->mtime), "%lo", header->mtime);
     raw_header->typeflag = header->typeflag;
     memcpy(raw_header->linkname, header->linkname, sizeof(raw_header->linkname));
-    memcpy(raw_header->magic, "ustar", sizeof(raw_header->magic));
-    memcpy(raw_header->version, "00", sizeof(raw_header->version));
+    memcpy(raw_header->magic, TARCHIVER_MAGIC, sizeof(raw_header->magic));
+    memcpy(raw_header->version, TARCHIVER_VERSION, sizeof(raw_header->version));
     memcpy(raw_header->uname, header->uname, sizeof(raw_header->uname));
     memcpy(raw_header->gname, header->gname, sizeof(raw_header->gname));
     snprintf(raw_header->devmajor, sizeof(raw_header->devmajor), "%o", header->devmajor);
@@ -196,7 +194,7 @@ static int tarchiver_header_to_raw(tarchiver_raw_header_t *raw_header, const tar
 }
 
 int tarchiver_open(tarchiver_t *tar, const char *filename, const char *mode) {
-    if (tar == NULL) {
+    if (tar == NULL || filename == NULL || mode == NULL) {
         return TARCHIVER_FAILURE;
     }
 
@@ -249,6 +247,10 @@ int tarchiver_open(tarchiver_t *tar, const char *filename, const char *mode) {
 }
 
 int tarchiver_next(tarchiver_t *tar) {
+    if (tar == NULL) {
+        return TARCHIVER_FAILURE;
+    }
+
     /* Read header */
     tarchiver_header_t header;
     int err = tarchiver_read_header(tar, &header);
@@ -261,23 +263,55 @@ int tarchiver_next(tarchiver_t *tar) {
     return tarchiver_seek(tar, ftell(tar->stream) + record_size, SEEK_SET);
 }
 
-int tarchiver_find(tarchiver_t *tar, const char *filename, tarchiver_header_t *header) {
-    tarchiver_header_t temp_header;
+int tarchiver_find(tarchiver_t *tar, const char *path, tarchiver_header_t *header) {
+    if (tar == NULL || path == NULL || header == NULL) {
+        return TARCHIVER_FAILURE;
+    }
 
-    /* Look from the beginning of the archive */
+    /* Search from the beginning of the archive */
     int err = tarchiver_rewind(tar);
     if (err != TARCHIVER_SUCCESS) {
         return err;
     }
 
+    const char *name;
+    size_t prefix_length, name_length;
+    const size_t path_length = strlen(path);
+
+    /* Case where path is stored in the prefix field */
+    if (path_length > sizeof(header->name)) {
+        /* Extract file name */
+        name = strrchr(path, '/');
+
+        /* Pure filename longer than 100 chars, cannot be stored in USTAR archive */
+        if (name == NULL) {
+            return TARCHIVER_NULLRECORD;
+        }
+
+        /* Compute lengths */
+        name++; // Skip slash
+        name_length = strlen(name);
+        prefix_length = path_length - name_length - 1;
+
+        /* This path cannot be stored in USTAR archive */
+        if (name_length > sizeof(header->name) || prefix_length > sizeof(header->prefix)) {
+            return TARCHIVER_NULLRECORD;
+        }
+    }
+
     /* Iterate until there's nothing left to read */
-    while ((err = tarchiver_read_header(tar, &temp_header)) == TARCHIVER_SUCCESS) {
-        if (strcmp(filename, temp_header.name) == 0) {
-            if (header != NULL) {
-                *header = temp_header;
+    while ((err = tarchiver_read_header(tar, header)) == TARCHIVER_SUCCESS) {
+        if (path_length <= sizeof(header->name)) {
+            if (strcmp(path, header->name) == 0) {
                 break;
             }
         }
+        else {
+            if (strncmp(path, header->prefix, prefix_length) == 0 && strcmp(name, header->name) == 0) {
+                break;
+            }
+        }
+
         tarchiver_next(tar);
     }
 
@@ -288,12 +322,15 @@ int tarchiver_find(tarchiver_t *tar, const char *filename, tarchiver_header_t *h
 }
 
 int tarchiver_read_header(tarchiver_t *tar, tarchiver_header_t *header) {
-    tarchiver_raw_header_t raw_header;
+    if (tar == NULL || header == NULL) {
+        return TARCHIVER_FAILURE;
+    }
 
     /* Save last header position */
     tar->last_header_pos = ftell(tar->stream);
 
     /* Read the header */
+    tarchiver_raw_header_t raw_header;
     int read_status = tarchiver_read(tar, sizeof(tarchiver_raw_header_t), &raw_header);
 
     /* Go back to the beginning of the header */
@@ -310,6 +347,10 @@ int tarchiver_read_header(tarchiver_t *tar, tarchiver_header_t *header) {
 }
 
 ssize_t tarchiver_read_data(tarchiver_t *tar, size_t size, void *data) {
+    if (tar == NULL || data == NULL) {
+        return TARCHIVER_FAILURE;
+    }
+
     int err;
 
     /* If no bytes left to read then this is the first read, obtain the
@@ -354,6 +395,10 @@ ssize_t tarchiver_read_data(tarchiver_t *tar, size_t size, void *data) {
 }
 
 int tarchiver_write_header(tarchiver_t *tar, const tarchiver_header_t *header) {
+    if (tar == NULL || header == NULL) {
+        return TARCHIVER_FAILURE;
+    }
+
     /* Skip closing record */
     int err = tarchiver_skip_closing_record(tar);
     if (err != TARCHIVER_SUCCESS) {
@@ -368,6 +413,10 @@ int tarchiver_write_header(tarchiver_t *tar, const tarchiver_header_t *header) {
 }
 
 ssize_t tarchiver_write_data(tarchiver_t *tar, size_t size, const void *data) {
+    if (tar == NULL || data == NULL) {
+        return TARCHIVER_FAILURE;
+    }
+
     /* Skip closing record */
     int err = tarchiver_skip_closing_record(tar);
     if (err != TARCHIVER_SUCCESS) {
