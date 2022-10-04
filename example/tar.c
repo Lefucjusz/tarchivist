@@ -19,17 +19,36 @@ typedef struct tar_ctx_t {
 
 tar_ctx_t ctx;
 
+static void tar_remove_duplicated_slashes(char *path) {
+    if (path == NULL) {
+	return;
+    }
+
+    for (size_t i = 0; i < strlen(path) - 1; i++) {
+        if (path[i] == '/' && path[i + 1] == '/') {
+            memmove(path + i, path + i + 1, strlen(path + i + 1) + 1);
+        }
+    }
+}
+
+static void tar_remove_trailing_slash(char *path) {
+    if (path == NULL || strlen(path) < 2) {
+	return;
+    }
+
+    const size_t end = strlen(path) - 1;
+    if (path[end] == '/') {
+        path[end] = '\0';
+    }
+}
+
 static void tar_path_cleanup(char *path) {
     if (path == NULL || strlen(path) < 2) {
         return;
     }
 
     /* Remove duplicated slashes */
-    for (size_t i = 0; i < strlen(path) - 1; i++) {
-        if (path[i] == '/' && path[i + 1] == '/') {
-            memmove(path + i, path + i + 1, strlen(path + i + 1) + 1);
-        }
-    }
+    tar_remove_duplicated_slashes(path);
 
     /* Remove CWD */
     if (strncmp(path, "./", 2) == 0) {
@@ -42,10 +61,27 @@ static void tar_path_cleanup(char *path) {
     }
 
     /* Remove trailing slash */
-    size_t end = strlen(path) - 1;
-    if (path[end] == '/') {
-        path[end] = '\0';
+    tar_remove_trailing_slash(path);
+}
+
+static int tar_recursive_mkdir(char *path, mode_t mode) {
+    int err = 0;
+
+    /* Try to create directory */
+    err = mkdir(path, mode);
+
+    /* If unsuccessful, recursively try to create parent directory */
+    if (err != 0) {
+        char *bottom_dir = strrchr(path, '/');
+        if (bottom_dir != NULL) {
+            bottom_dir[0] = '\0';
+            err = tar_recursive_mkdir(path, mode);
+            bottom_dir[0] = '/';
+            err = mkdir(path, mode);
+       }
     }
+
+    return err;
 }
 
 static int tar_pack_file(const struct stat *statbuf, const char *path) {
@@ -194,9 +230,10 @@ static int tar_unpack_directory(tarchiver_header_t *header, const char *dir) {
     }
 
     snprintf(full_path, path_length, "%s/%s", dir, name);
+    tar_remove_trailing_slash(full_path);
     printf("Creating directory %s\n", full_path);
 
-    int err = mkdir(full_path, 0755);
+    int err = tar_recursive_mkdir(full_path, 0755);
     if (err != 0) {
         if (errno == EEXIST) {
             printf("Directory %s already exists\n", full_path);
@@ -258,14 +295,24 @@ int tar_unpack(const char *dir, const char *tarname) {
         return err;
     }
 
+    char *dir_cleaned = (char *) calloc(1, strlen(dir) + 1);
+    if (dir_cleaned == NULL) {
+        return TAR_NOMEMORY;
+    }
+    strcpy(dir_cleaned, dir);
+
+    /* Directory path cleanup */
+    tar_remove_duplicated_slashes(dir_cleaned);
+    tar_remove_trailing_slash(dir_cleaned);
+
     tarchiver_header_t header;
     while ((lib_err = tarchiver_read_header(&ctx.tar, &header)) == TARCHIVER_SUCCESS) {
         switch (header.typeflag) {
             case TARCHIVER_FILE:
-                err = tar_unpack_file(&header, dir);
+                err = tar_unpack_file(&header, dir_cleaned);
                 break;
             case TARCHIVER_DIR:
-                err = tar_unpack_directory(&header, dir);
+                err = tar_unpack_directory(&header, dir_cleaned);
                 break;
             default:
                 printf("Unhandled case in unpack: %d\n", header.typeflag);
@@ -292,6 +339,7 @@ int tar_unpack(const char *dir, const char *tarname) {
         err = TAR_LIBERROR;
     }
 
+    free(dir_cleaned);
     tar_deinit();
     return err;
 }
