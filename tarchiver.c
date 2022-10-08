@@ -113,6 +113,7 @@ static int tarchiver_skip_closing_record(tarchiver_t *tar) {
     char *zeros;
     int err;
 
+    /* This algorithm will fail if tar is not finalized and last 1024 bytes of last file content are zeros */
     do
     {
         buffer = (char *) calloc(1, TARCHIVER_CLOSING_RECORD_SIZE);
@@ -256,31 +257,38 @@ int tarchiver_open(tarchiver_t *tar, const char *filename, const char *io_mode) 
             tar->stream = fopen(filename, "rb+"); /* Little hack to be able to append to arbitrary places in file */
             if (tar->stream == NULL) {
                 tar->stream = fopen(filename, "wb");
-            }
-            if (tar->stream == NULL) {
-                return TARCHIVER_OPENFAIL;
+                if (tar->stream == NULL) {
+                    return TARCHIVER_OPENFAIL;
+                }
             }
 
             tar->seek(tar, 0, TARCHIVER_SEEK_END);
             size = tar->tell(tar);
-            if (size < TARCHIVER_CLOSING_RECORD_SIZE) {
-                tar->seek(tar, 0, TARCHIVER_SEEK_SET);  /* Ignore all the data present in the file */
-            }
-            else {
-                /* Validate the file */
-                err = tarchiver_read_header(tar, &header);
-                if (err != TARCHIVER_SUCCESS) {
-                    tar->seek(tar, 0, TARCHIVER_SEEK_SET);  /* Ignore all the data present in the file */
-                    return TARCHIVER_SUCCESS;
-                }
+            tar->seek(tar, 0, TARCHIVER_SEEK_SET);
 
-                err = tarchiver_skip_closing_record(tar);
-                if (err != TARCHIVER_SUCCESS) {
-                    fclose(tar->stream);
-                    return err;
-                }
+            if (size < TARCHIVER_CLOSING_RECORD_SIZE) {
+                return TARCHIVER_SUCCESS; /* File contains some non-tar garbage that will be overwritten */
             }
-            return TARCHIVER_SUCCESS;
+
+            /* Check the first header */
+            err = tarchiver_read_header(tar, &header);
+            switch (err) {
+                case TARCHIVER_BADCHKSUM:
+                case TARCHIVER_NULLRECORD:
+                    return TARCHIVER_SUCCESS; /* Again - some garbage or malformed tar */
+
+                case TARCHIVER_SUCCESS:
+                    err = tarchiver_skip_closing_record(tar);
+                    if (err != TARCHIVER_SUCCESS) {
+                        fclose(tar->stream);
+                    }
+                    break;
+
+                default:
+                    break;
+
+            }
+            return err;
 
         default:
             return TARCHIVER_OPENFAIL;

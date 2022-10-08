@@ -1,21 +1,27 @@
 CC = gcc
-CFLAGS = -W -Wall -std=c99 -O3
-TARGET = tarchiver
+CCFLAGS = -W -Wall -pedantic -std=c99
+TARGET = packer
 SOURCES = example/main.c example/tar.c tarchiver.c
 OBJECTS = $(SOURCES:.c=.o)
 
-.PHONY: all clean
+.PHONY: all release debug clean
 
-all: $(TARGET)
+all: release
+
+release: CCFLAGS += -O3
+release: build
+
+debug: CCFLAGS += -Og -ggdb3
+debug: build
 
 clean:
 	@rm -rf $(TARGET) $(OBJECTS)
 	@echo "Cleanup finished!"
 
-$(TARGET) : $(OBJECTS)
-	@$(CC) $^ -o $@
+build: $(OBJECTS)
+	@$(CC) $^ -o $(TARGET)
 	@echo "Linking finished!"
 
 %.o: %.c
-	@$(CC) $(CFLAGS) -c $< -o $@
+	@$(CC) $(CCFLAGS) -c $< -o $@
 	@echo "Compiled "$<" successfully!"
