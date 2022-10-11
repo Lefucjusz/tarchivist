@@ -1,27 +1,54 @@
 CC = gcc
-CCFLAGS = -W -Wall -pedantic -std=c99
-TARGET = packer
-SOURCES = example/main.c example/tar.c tarchiver.c
-OBJECTS = $(SOURCES:.c=.o)
+CCFLAGS = -W -Wall -pedantic -std=c99 -O3
+PACKSRCS = examples/packer/main.c examples/packer/packer.c tarchivist.c
+READSRCS = examples/read-demo/main.c tarchivist.c
+WRITESRCS = examples/write-demo/main.c tarchivist.c
+OBJDIR = build/obj
+PACKOBJS = $(PACKSRCS:%.c=$(OBJDIR)/%.o)
+READOBJS = $(READSRCS:%.c=$(OBJDIR)/%.o)
+WRITEOBJS = $(WRITESRCS:%.c=$(OBJDIR)/%.o)
+BINDIR = build/bin
 
-.PHONY: all release debug clean
+.PHONY: clean
 
-all: release
+all: packer read-demo write-demo
+	@echo "All binaries have been built and written to "$(BINDIR)"!"
 
-release: CCFLAGS += -O3
-release: build
+packer: $(PACKOBJS)
+	@echo -n "Linking... "
+	@mkdir -p $(BINDIR)
+	@$(CC) $^ -o $(BINDIR)/packer
+	@echo "Done!"
 
-debug: CCFLAGS += -Og -ggdb3
-debug: build
+packer-debug: CCFLAGS += -Og -ggdb3
+packer-debug: $(PACKOBJS)
+	@echo -n "Linking... "
+	@mkdir -p $(BINDIR)
+	@$(CC) $^ -o $(BINDIR)/packer-debug
+	@echo "Done!"
+
+read-demo: $(READOBJS)
+	@echo -n "Copying example-read.tar to "$(BINDIR)"... "
+	@cp examples/read-demo/example-read.tar $(BINDIR)
+	@echo "Done!"
+	@echo -n "Linking... "
+	@mkdir -p $(BINDIR)
+	@$(CC) $^ -o $(BINDIR)/read-demo
+	@echo "Done!"
+
+write-demo: $(WRITEOBJS)
+	@echo -n "Linking... "
+	@mkdir -p $(BINDIR)
+	@$(CC) $^ -o $(BINDIR)/write-demo
+	@echo "Done!"
 
 clean:
-	@rm -rf $(TARGET) $(OBJECTS)
-	@echo "Cleanup finished!"
+	@echo "Cleaning up..."
+	@rm -rf $(OBJDIR) $(BINDIR)
+	@echo "Done!"
 
-build: $(OBJECTS)
-	@$(CC) $^ -o $(TARGET)
-	@echo "Linking finished!"
-
-%.o: %.c
+$(OBJDIR)/%.o: %.c
+	@echo -n "Compiling "$<"... "
+	@mkdir -p "$(@D)"
 	@$(CC) $(CCFLAGS) -c $< -o $@
-	@echo "Compiled "$<" successfully!"
+	@echo "Done!"
