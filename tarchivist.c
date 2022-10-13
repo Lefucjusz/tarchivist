@@ -558,3 +558,32 @@ int tarchivist_close(tarchivist_t *tar) {
 
     return tar->close(tar);
 }
+
+const char *tarchivist_strerror(int error_code) {
+    switch (error_code) {
+        case TARCHIVIST_SUCCESS:
+            return "success";   
+        case TARCHIVIST_FAILURE: 
+            return "general failure";    
+        case TARCHIVIST_OPENFAIL: 
+            return "failed to open";   
+        case TARCHIVIST_READFAIL:  
+            return "failed to read data";  
+        case TARCHIVIST_WRITEFAIL: 
+            return "failed to write data";  
+        case TARCHIVIST_SEEKFAIL: 
+            return "failed to seek";   
+        case TARCHIVIST_CLOSEFAIL: 
+            return "failed to close";  
+        case TARCHIVIST_BADCHKSUM: 
+            return "bad header checksum";  
+        case TARCHIVIST_NULLRECORD:
+            return "record is null";  
+        case TARCHIVIST_NOTFOUND: 
+            return "record not found";   
+        case TARCHIVIST_NOMEMORY:
+            return "no memory left";  
+        default:
+            return "unknown"; 
+    }
+}

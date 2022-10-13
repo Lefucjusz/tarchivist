@@ -91,4 +91,6 @@ long tarchivist_read_data(tarchivist_t *tar, unsigned size, void *data);
 int tarchivist_write_header(tarchivist_t *tar, const tarchivist_header_t *header);
 long tarchivist_write_data(tarchivist_t *tar, unsigned size, const void *data);
 
+const char *tarchivist_strerror(int error_code);
+
 #endif

@@ -51,7 +51,7 @@ int main(void) {
         printf("Opening the archive %s...\n", tar_to_write);
         err = tarchivist_open(&tar, tar_to_write, "w");
         if (err != TARCHIVIST_SUCCESS) {
-            printf("Error: failed to open %s, error code %d!\n", tar_to_write, err);
+            printf("Error: failed to open %s, error: %s!\n", tar_to_write, tarchivist_strerror(err));
             break;
         }
 
@@ -60,12 +60,12 @@ int main(void) {
         prepare_file_header(&header, first_file, strlen(first_file_content));
         err = tarchivist_write_header(&tar, &header);
         if (err != TARCHIVIST_SUCCESS) {
-            printf("Error: failed to write file header, error %d\n", err);
+            printf("Error: failed to write file header, error: %s\n", tarchivist_strerror(err));
             break;
         }
         err = tarchivist_write_data(&tar, strlen(first_file_content), first_file_content);
         if (err <= 0) {
-            printf("Error: failed to write file data, error %d\n", err);
+            printf("Error: failed to write file data, error: %s\n", tarchivist_strerror(err));
             break;
         }
 
@@ -74,7 +74,7 @@ int main(void) {
         prepare_dir_header(&header, dir_to_write);
         err = tarchivist_write_header(&tar, &header);
         if (err != TARCHIVIST_SUCCESS) {
-            printf("Error: failed to write directory header, error %d\n", err);
+            printf("Error: failed to write directory header, error: %s\n", tarchivist_strerror(err));
             break;
         }
 
@@ -91,19 +91,19 @@ int main(void) {
         prepare_file_header(&header, compound_path, strlen(second_file_content));
         err = tarchivist_write_header(&tar, &header);
         if (err != TARCHIVIST_SUCCESS) {
-            printf("Error: failed to write file header, error %d\n", err);
+            printf("Error: failed to write file header, error: %s\n", tarchivist_strerror(err));
             break;
         }
         err = tarchivist_write_data(&tar, strlen(second_file_content), second_file_content);
         if (err <= 0) {
-            printf("Error: failed to write file data, error %d\n", err);
+            printf("Error: failed to write file data, error: %s\n", tarchivist_strerror(err));
             break;
         }
 
         printf("Closing the archive %s...\n", tar_to_write);
         err = tarchivist_close(&tar);
         if (err != TARCHIVIST_SUCCESS) {
-            printf("Error: failed to close the archive, error code %d!\n", err);
+            printf("Error: failed to close the archive, error: %s!\n", tarchivist_strerror(err));
             break;
         }
         printf("Done!\n");

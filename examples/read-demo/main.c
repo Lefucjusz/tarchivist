@@ -41,7 +41,7 @@ int main(void) {
         printf("Opening the archive %s...\n", tar_to_read);
         err = tarchivist_open(&tar, tar_to_read, "r");
         if (err != TARCHIVIST_SUCCESS) {
-            printf("Error: failed to open %s, error code %d!\n", tar_to_read, err);
+            printf("Error: failed to open %s, error: %s!\n", tar_to_read, tarchivist_strerror(err));
             break;
         }
 
@@ -55,7 +55,7 @@ int main(void) {
         printf("\nSearching file %s and printing its content...\n\n", file_to_read);
         err = tarchivist_find(&tar, file_to_read, &header);
         if (err != TARCHIVIST_SUCCESS) {
-            printf("Error: failed to find %s, error code %d!\n", file_to_read, err);
+            printf("Error: failed to find %s, error: %s!\n", file_to_read, tarchivist_strerror(err));
             break;
         }
 
@@ -67,7 +67,7 @@ int main(void) {
 
 	err = tarchivist_read_data(&tar, header.size + 1, file_content);
 	if (err <= 0) {
-            printf("Error: failed to read data from %s, error code %d!\n", file_to_read, err);
+            printf("Error: failed to read data from %s, error: %s!\n", file_to_read, tarchivist_strerror(err));
             break;
         }
         printf("Content: %s\n", file_content);
@@ -75,7 +75,7 @@ int main(void) {
         printf("Closing the archive %s...\n", tar_to_read);
         err = tarchivist_close(&tar);
         if (err != TARCHIVIST_SUCCESS) {
-            printf("Error: failed to close the archive, error code %d!\n", err);
+            printf("Error: failed to close the archive, error: %s!\n", tarchivist_strerror(err));
             break;
         }
         printf("Done!\n");
