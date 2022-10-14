@@ -1,17 +1,19 @@
 CC = gcc
 CCFLAGS = -W -Wall -pedantic -std=c99 -O3
 PACKSRCS = examples/packer/main.c examples/packer/packer.c tarchivist.c
+PACKSTRSRCS = examples/packer-custom-stream/main.c examples/packer-custom-stream/packer.c tarchivist.c
 READSRCS = examples/read-demo/main.c tarchivist.c
 WRITESRCS = examples/write-demo/main.c tarchivist.c
 OBJDIR = build/obj
 PACKOBJS = $(PACKSRCS:%.c=$(OBJDIR)/%.o)
+PACKSTROBJS = $(PACKSTRSRCS:%.c=$(OBJDIR)/%.o)
 READOBJS = $(READSRCS:%.c=$(OBJDIR)/%.o)
 WRITEOBJS = $(WRITESRCS:%.c=$(OBJDIR)/%.o)
 BINDIR = build/bin
 
 .PHONY: clean
 
-all: packer read-demo write-demo
+all: packer packer-custom-stream read-demo write-demo
 	@echo "All binaries have been built and written to "$(BINDIR)"!"
 
 packer: $(PACKOBJS)
@@ -25,6 +27,12 @@ packer-debug: $(PACKOBJS)
 	@echo -n "Linking... "
 	@mkdir -p $(BINDIR)
 	@$(CC) $^ -o $(BINDIR)/packer-debug
+	@echo "Done!"
+
+packer-custom-stream: $(PACKSTROBJS)
+	@echo -n "Linking... "
+	@mkdir -p $(BINDIR)
+	@$(CC) $^ -o $(BINDIR)/packer-custom-stream
 	@echo "Done!"
 
 read-demo: $(READOBJS)

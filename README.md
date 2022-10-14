@@ -1,7 +1,7 @@
 
 # tarchivist
 A small, simple tar library implementation based on rxi's [microtar](https://github.com/rxi/microtar).  
-The library contains of two files only - `tarchivist.c` and `tarchivist.h` - and is written in ANSI C, what makes it easy to integrate into a wide variety of projects.
+The library consists of only two files - `tarchivist.c` and `tarchivist.h` - and is written in ANSI C, what makes it easy to integrate into a wide variety of projects.
 
 ## Functionalities
 * Creating, writing and appending files to the tar archives
@@ -13,10 +13,11 @@ The library contains of two files only - `tarchivist.c` and `tarchivist.h` - and
 * Custom stream interface
 
 ## Examples
-Included examples presenting the usage of the library are:
+The following examples presenting the usage of the library have been included:
 * *read_demo* - presents the functionalities of reading the tar file;
 * *write_demo* - presents the functionalities of creating and writing the tar file;
-* *packer* - implements very simple *tar*-like utility that can perform packing and unpacking of an archive.
+* *packer* - implements very simple *tar*-like utility that can perform packing and unpacking of an archive;
+* *packer-custom-stream* - presents how to use custom stream interface; apart from that has the same functionality as packer.
 
 ### Running the examples
 The examples use *POSIX* calls and libraries, so they have to be compiled under the environment that supports them.
@@ -67,6 +68,11 @@ cd build/bin
 ##### Build *packer*'s debug version (with *-Og* and *-ggdb3* flags) 
 ```shell
 make packer-debug
+```
+
+##### Build *packer-custom-stream*
+```shell
+make packer-custom-stream
 ```
 
 ## Custom stream interface

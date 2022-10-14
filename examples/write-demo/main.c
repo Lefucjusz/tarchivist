@@ -135,7 +135,7 @@ void prepare_file_header(tarchivist_header_t *header, const char* name, size_t s
     memset(header, 0, sizeof(tarchivist_header_t));
     
     strcpy(header->name, name);
-    header->mode = 0755;
+    header->mode = 0644;
     header->size = size;
     header->mtime = timestamp;
     header->typeflag = TARCHIVIST_FILE;

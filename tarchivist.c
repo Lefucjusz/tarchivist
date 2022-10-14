@@ -132,48 +132,6 @@ static int tarchivist_rewind(tarchivist_t *tar) {
     return tar->seek(tar, 0, TARCHIVIST_SEEK_SET);
 }
 
-static int tarchivist_skip_closing_record(tarchivist_t *tar) {
-    char *buffer;
-    char *zeros;
-    int err;
-
-    /* This algorithm will fail if tar is not finalized and last 1024 bytes of last file content are zeros */
-    do
-    {
-        buffer = calloc(1, TARCHIVIST_CLOSING_RECORD_SIZE);
-        zeros = calloc(1, TARCHIVIST_CLOSING_RECORD_SIZE);
-        if (buffer == NULL || zeros == NULL) {
-            err = TARCHIVIST_NOMEMORY;
-            break;
-        }
-
-        /* Seek to the beginning of the closing record */
-        err = tar->seek(tar, -TARCHIVIST_CLOSING_RECORD_SIZE, TARCHIVIST_SEEK_END);
-        if (err != TARCHIVIST_SUCCESS) {
-            break;
-        }
-
-        /* Read the content of the closing record */
-        err = tar->read(tar, TARCHIVIST_CLOSING_RECORD_SIZE, buffer);
-        if (err != TARCHIVIST_SUCCESS) {
-            break;
-        }
-
-        /* Check whether it is closing record indeed */
-        if (memcmp(buffer, zeros, TARCHIVIST_CLOSING_RECORD_SIZE) == 0) {
-            /* Seek to the beginning of the closing record so that the next write will overwrite it */
-            err = tar->seek(tar, -TARCHIVIST_CLOSING_RECORD_SIZE, TARCHIVIST_SEEK_END);
-            break;
-        }
-        /* If it's not a closing record, do nothing */
-
-    } while (0);
-
-    free(zeros);
-    free(buffer);
-    return err;
-}
-
 static int tarchivist_raw_to_header(tarchivist_header_t *header, const tarchivist_raw_header_t *raw_header) {
     /* Assume that checksum starting with a null byte indicates a null record */
     if (raw_header->checksum[0] == '\0') {
@@ -233,9 +191,75 @@ static int tarchivist_header_to_raw(tarchivist_raw_header_t *raw_header, const t
     return TARCHIVIST_SUCCESS;
 }
 
+int tarchivist_skip_closing_record(tarchivist_t *tar) {
+    tarchivist_header_t header;
+    char *buffer;
+    char *zeros;
+    long size;
+    int err;
+
+    /* Get file size */
+    err = tar->seek(tar, 0, TARCHIVIST_SEEK_END);
+    if (err != TARCHIVIST_SUCCESS) {
+        return err;
+    }
+    size = tar->tell(tar);
+
+    /* Rewind back to the beginning of the file */
+    err = tar->seek(tar, 0, TARCHIVIST_SEEK_SET);
+    if (err != TARCHIVIST_SUCCESS) {
+        return err;
+    }
+
+    if (size < TARCHIVIST_CLOSING_RECORD_SIZE) {
+        return TARCHIVIST_SUCCESS; /* File contains some non-tar garbage that will be overwritten */    
+    }
+
+    /* Check the first header */
+    err = tarchivist_read_header(tar, &header);
+    if (err == TARCHIVIST_BADCHKSUM || err == TARCHIVIST_NULLRECORD) {
+        return TARCHIVIST_SUCCESS; /* Again - some garbage or malformed tar */
+    }
+
+    /* This algorithm will fail if tar is not finalized and last 1024 bytes of last file content are zeros */
+    do
+    {
+        buffer = calloc(1, TARCHIVIST_CLOSING_RECORD_SIZE);
+        zeros = calloc(1, TARCHIVIST_CLOSING_RECORD_SIZE);
+        if (buffer == NULL || zeros == NULL) {
+            err = TARCHIVIST_NOMEMORY;
+            break;
+        }
+
+        /* Seek to the beginning of the closing record */
+        err = tar->seek(tar, -TARCHIVIST_CLOSING_RECORD_SIZE, TARCHIVIST_SEEK_END);
+        if (err != TARCHIVIST_SUCCESS) {
+            break;
+        }
+
+        /* Read the content of the closing record */
+        err = tar->read(tar, TARCHIVIST_CLOSING_RECORD_SIZE, buffer);
+        if (err != TARCHIVIST_SUCCESS) {
+            break;
+        }
+
+        /* Check whether it is closing record indeed */
+        if (memcmp(buffer, zeros, TARCHIVIST_CLOSING_RECORD_SIZE) == 0) {
+            /* Seek to the beginning of the closing record so that the next write will overwrite it */
+            err = tar->seek(tar, -TARCHIVIST_CLOSING_RECORD_SIZE, TARCHIVIST_SEEK_END);
+            break;
+        }
+        /* If it's not a closing record, do nothing */
+
+    } while (0);
+
+    free(zeros);
+    free(buffer);
+    return err;
+}
+
 int tarchivist_open(tarchivist_t *tar, const char *filename, const char *io_mode) {
     tarchivist_header_t header;
-    long size;
     int err;
 
     if (tar == NULL || filename == NULL || io_mode == NULL) {
@@ -266,7 +290,7 @@ int tarchivist_open(tarchivist_t *tar, const char *filename, const char *io_mode
                 fclose(tar->stream);
                 return err;
             }
-            return TARCHIVIST_SUCCESS;
+            break;
 
         case 'w':
             tar->finalize = true;
@@ -274,7 +298,7 @@ int tarchivist_open(tarchivist_t *tar, const char *filename, const char *io_mode
             if (tar->stream == NULL) {
                 return TARCHIVIST_OPENFAIL;
             }
-            return TARCHIVIST_SUCCESS;
+            break;
 
         case 'a':
             tar->finalize = true;
@@ -286,37 +310,18 @@ int tarchivist_open(tarchivist_t *tar, const char *filename, const char *io_mode
                 }
             }
 
-            tar->seek(tar, 0, TARCHIVIST_SEEK_END);
-            size = tar->tell(tar);
-            tar->seek(tar, 0, TARCHIVIST_SEEK_SET);
-
-            if (size < TARCHIVIST_CLOSING_RECORD_SIZE) {
-                return TARCHIVIST_SUCCESS; /* File contains some non-tar garbage that will be overwritten */
+            err = tarchivist_skip_closing_record(tar);
+            if (err != TARCHIVIST_SUCCESS) {
+                fclose(tar->stream);
+                return err;
             }
-
-            /* Check the first header */
-            err = tarchivist_read_header(tar, &header);
-            switch (err) {
-                case TARCHIVIST_BADCHKSUM:
-                case TARCHIVIST_NULLRECORD:
-                    return TARCHIVIST_SUCCESS; /* Again - some garbage or malformed tar */
-
-                case TARCHIVIST_SUCCESS:
-                    err = tarchivist_skip_closing_record(tar);
-                    if (err != TARCHIVIST_SUCCESS) {
-                        fclose(tar->stream);
-                    }
-                    break;
-
-                default:
-                    break;
-
-            }
-            return err;
+            break;
 
         default:
             return TARCHIVIST_OPENFAIL;
     }
+
+    return TARCHIVIST_SUCCESS;
 }
 
 int tarchivist_next(tarchivist_t *tar) {

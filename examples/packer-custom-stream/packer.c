@@ -29,6 +29,8 @@
 #include <time.h>
 #include <ftw.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #define FTW_MAX_DIRS_OPENED 10
 #define STREAM_BUFFER_SIZE (1024 * 1024) // 1MiB
@@ -107,8 +109,8 @@ static int packer_recursive_mkdir(char *path, mode_t mode) {
 static int packer_pack_file(const struct stat *statbuf, const char *path) {
     tarchivist_header_t header = {0};
 
-    FILE *src_file = fopen(path, "rb");
-    if (src_file == NULL) {
+    int src_file = open(path, O_RDONLY);
+    if (src_file <= 0) {
         return PACKER_OPENFAIL;
     }
 
@@ -125,7 +127,7 @@ static int packer_pack_file(const struct stat *statbuf, const char *path) {
     time(&timestamp);
 
     snprintf(header.name, sizeof(header.name), "%s", path_cleaned);
-    header.mode = 0664;
+    header.mode = 0644;
     header.uid = 1000;
     header.gid = 1000;
     header.size = statbuf->st_size;
@@ -145,15 +147,15 @@ static int packer_pack_file(const struct stat *statbuf, const char *path) {
     size_t read_size;
     do
     {
-        read_size = fread(ctx.buffer, 1, ctx.buffer_size, src_file);
+        read_size = read(src_file, ctx.buffer, ctx.buffer_size);
         err = tarchivist_write_data(&ctx.tar, read_size, ctx.buffer);
         if (err <= TARCHIVIST_SUCCESS) {
             return PACKER_LIBERROR;
         }
-        
+
     } while (ctx.tar.bytes_left > 0);
 
-    if (fclose(src_file) != 0) {
+    if (close(src_file) != 0) {
         return PACKER_CLOSEFAIL;
     }
     return PACKER_SUCCESS;
@@ -215,8 +217,8 @@ static int packer_unpack_file(tarchivist_header_t *header, const char *dir) {
 
     snprintf(full_path, path_length, "%s/%s", dir, name);
 
-    FILE *dst_file = fopen(full_path, "wb"); // If such file already existed, now it's gone
-    if (dst_file == NULL) {
+    int dst_file = open(full_path, O_WRONLY | O_CREAT, 0644); // If such file already existed, now it's gone
+    if (dst_file <= 0) {
         printf("Failed to open file %s to write\n", full_path);
         free(full_path);
         return PACKER_OPENFAIL;
@@ -230,14 +232,14 @@ static int packer_unpack_file(tarchivist_header_t *header, const char *dir) {
     {
         read_size = tarchivist_read_data(&ctx.tar, ctx.buffer_size, ctx.buffer);
         if (read_size <= TARCHIVIST_SUCCESS) {
-            fclose(dst_file);
+            close(dst_file);
             return PACKER_LIBERROR;
         }
-        fwrite(ctx.buffer, 1, read_size, dst_file);
+        write(dst_file, ctx.buffer, read_size);
 
     } while (ctx.tar.bytes_left > 0);
 
-    if (fclose(dst_file) != 0) {
+    if (close(dst_file) != 0) {
         return PACKER_CLOSEFAIL;
     }
     return PACKER_SUCCESS;
@@ -272,8 +274,118 @@ static int packer_unpack_directory(tarchivist_header_t *header, const char *dir)
     return PACKER_SUCCESS;
 }
 
+/* Custom stream callbacks */
+static int custom_seek(tarchivist_t *tar, long offset, int whence) {
+    const int fd = *(int*)(tar->stream);
+    off_t pos;
+    switch (whence) {
+        case TARCHIVIST_SEEK_SET:
+            pos = lseek(fd, offset, SEEK_SET);
+            break;
+        case TARCHIVIST_SEEK_END:
+            pos = lseek(fd, offset, SEEK_END);
+            break;
+        default:
+            return TARCHIVIST_SEEKFAIL;
+    }
+    return (pos != -1) ? TARCHIVIST_SUCCESS : TARCHIVIST_SEEKFAIL;
+}
+
+static long custom_tell(tarchivist_t *tar) {
+    const int fd = *(int*)(tar->stream);
+    const off_t pos = lseek(fd, 0, SEEK_CUR);
+    return (pos != -1) ? pos : TARCHIVIST_SEEKFAIL;
+}
+
+static int custom_read(tarchivist_t *tar, unsigned size, void *data) {
+    const int fd = *(int*)(tar->stream);
+    const size_t ret = read(fd, data, size);
+    return (ret == size) ? TARCHIVIST_SUCCESS : TARCHIVIST_READFAIL;
+}
+
+static int custom_write(tarchivist_t *tar, unsigned size, const void *data) {
+    const int fd = *(int*)(tar->stream);
+    const size_t ret = write(fd, data, size);
+    return (ret == size) ? TARCHIVIST_SUCCESS : TARCHIVIST_WRITEFAIL;
+}
+
+static int custom_close(tarchivist_t *tar) {
+    const int fd = *(int*)(tar->stream);
+    const int err = close(fd);
+    free(tar->stream);
+    return (err == 0) ? TARCHIVIST_SUCCESS : TARCHIVIST_CLOSEFAIL;
+}
+
+static int packer_tar_open(tarchivist_t *tar, const char *filename, const char *io_mode) {
+    tarchivist_header_t header;
+    int err;
+    int *fd_ptr;
+
+    /* Clear tar struct */
+    memset(tar, 0, sizeof(tarchivist_t));
+
+    /* Assign stream callbacks */
+    tar->seek = custom_seek;
+    tar->tell = custom_tell;
+    tar->read = custom_read;
+    tar->write = custom_write;
+    tar->close = custom_close;
+
+    fd_ptr = calloc(1, sizeof(int));
+    if (fd_ptr == NULL) {
+        printf("Failed to allocate memory for file descriptor!\n");
+        return TARCHIVIST_FAILURE;
+    }
+
+    switch (io_mode[0]) {
+        case 'r':
+            tar->finalize = false;
+            *fd_ptr = open(filename, O_RDONLY);
+            if (*fd_ptr <= 0) {
+                return TARCHIVIST_OPENFAIL;
+            }
+            tar->stream = fd_ptr;
+
+            /* Validate the file */
+            err = tarchivist_read_header(tar, &header);
+            if (err != TARCHIVIST_SUCCESS) {
+                close(*fd_ptr);
+                return err;
+            }
+            break;
+
+        case 'w':
+            tar->finalize = true;
+            *fd_ptr = open(filename, O_WRONLY | O_CREAT, 0644);
+            if (*fd_ptr <= 0) {
+                return TARCHIVIST_OPENFAIL;
+            }
+            tar->stream = fd_ptr;
+            break;
+
+        case 'a':
+            tar->finalize = true;
+            *fd_ptr = open(filename, O_RDWR | O_CREAT, 0644);
+            if (*fd_ptr <= 0) {
+                return TARCHIVIST_OPENFAIL;
+            }
+            tar->stream = fd_ptr;
+
+            err = tarchivist_skip_closing_record(tar);
+            if (err != TARCHIVIST_SUCCESS) {
+                close(*fd_ptr);
+                return err;
+            }
+            break;
+
+        default:
+            return TARCHIVIST_OPENFAIL;
+    }
+    return TARCHIVIST_SUCCESS;
+}
+
 static int packer_init(const char *tarname, const char *mode) {
-    if (tarchivist_open(&ctx.tar, tarname, mode) != TARCHIVIST_SUCCESS) {
+    if (packer_tar_open(&ctx.tar, tarname, mode) != TARCHIVIST_SUCCESS) {
         printf("Failed to open archive %s in mode %s\n", tarname, mode);
         return PACKER_LIBERROR;
     }

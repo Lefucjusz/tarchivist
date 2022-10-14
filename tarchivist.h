@@ -80,6 +80,8 @@ struct tarchivist_t {
     long last_header_pos;
 };
 
+int tarchivist_skip_closing_record(tarchivist_t *tar);
+
 int tarchivist_open(tarchivist_t *tar, const char *filename, const char *io_mode);
 int tarchivist_close(tarchivist_t *tar);
 
