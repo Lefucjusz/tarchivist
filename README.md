@@ -110,8 +110,8 @@ Such a case seemed so unlikely to me that I decided not to change the algorithm,
 
 This solution would be much more robust, but also more time complex, especially when dealing with archives that contain a lot of files, as it requires finding the last file in the archive.
 
-## License
-This library is free software; you can redistribute it and/or modify it under the terms of the MIT license. See [LICENSE](https://github.com/Lefucjusz/tarchivist/blob/main/LICENSE) for details.
-
 ## Credits
 tarchivist is based on rxi's [microtar](https://github.com/rxi/microtar).
+
+## License
+This library is free software; you can redistribute it and/or modify it under the terms of the MIT license. See [LICENSE](https://github.com/Lefucjusz/tarchivist/blob/main/LICENSE) for details.
