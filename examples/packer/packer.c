@@ -125,7 +125,7 @@ static int packer_pack_file(const struct stat *statbuf, const char *path) {
     time(&timestamp);
 
     snprintf(header.name, sizeof(header.name), "%s", path_cleaned);
-    header.mode = 0664;
+    header.mode = 0644;
     header.uid = 1000;
     header.gid = 1000;
     header.size = statbuf->st_size;

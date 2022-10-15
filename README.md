@@ -101,7 +101,7 @@ The algorithm detecting whether an archive is finalized (i.e. contains two null 
 * if the size of an archive file is at least 1024 bytes (the size of two null records);
 * if the last 1024 bytes are all zeros.
 
-When both of these are true, the archive is assumed to be finalized. This creates at least one unhandled corner case that I'm aware of - if the archive is not finalized, but the last file in the archive contains at least 1024 zero bytes, the algorithm will treat it as if it's finalized. This will lead to data corruption while appending new files to an existing tar, as those last 1024 bytes will be overwritten. 
+When both of these are true, the archive is assumed to be finalized. This creates at least one unhandled corner case that I'm aware of - if the archive is not finalized, but the last file in the archive contains at least 1024 zero bytes at the end, the algorithm will treat it as if it's finalized. This will lead to data corruption while appending new files to an existing tar, as those last 1024 bytes will be overwritten. 
 
 Such a case seemed so unlikely to me that I decided not to change the algorithm, but if someone would like to fix it, one of the solutions that came to my mind is to:
 * get the size of the last file;
